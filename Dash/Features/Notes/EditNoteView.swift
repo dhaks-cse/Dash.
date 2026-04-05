@@ -4,84 +4,325 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct EditNoteView: View {
 
     @Binding var note: Note
     @ObservedObject var viewModel: NotesViewModel
-
     @Environment(\.presentationMode) var presentationMode
 
     @State private var isImagePickerPresented = false
     @State private var selectedImage: IdentifiableImage? = nil
     @State private var tags: String = ""
-
     @State private var showingLinkInput = false
     @State private var linkText = ""
-
     @State private var showReminderPicker = false
     @State private var reminderDate = Date().addingTimeInterval(3600)
     @State private var isReminderSet = false
 
-    @State private var showFormatMenu = false
-    @State private var editorOffset: CGFloat = 0
+    // Quick List — bullet items as an ordered array for drag-to-reorder
+    @State private var bulletItems: [BulletItem] = []
+    @State private var isQuickList: Bool = false
+    @State private var newBulletText: String = ""
 
     var wordCount: Int { note.content.split(separator: " ").count }
-    var readingMinutes: Int { max(1, wordCount / 200) }
+    var charCount: Int { note.content.count }
+    var readMin: Int {
+        let minutes = Double(wordCount) / 200.0
+        return max(1, Int(ceil(minutes)))
+    }
+
+    // MARK: - BulletItem model (local, view-only)
+
+    struct BulletItem: Identifiable {
+        let id = UUID()
+        var text: String
+        var checked: Bool = false
+    }
+
+    // MARK: - Body
 
     var body: some View {
 
-        ZStack {
+        Form {
 
-            // Background
-            LinearGradient(
-                colors: [
-                    Color(red: 0.06, green: 0.06, blue: 0.09),
-                    Color(red: 0.09, green: 0.08, blue: 0.13)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // MARK: Note Title
 
-            VStack(spacing: 0) {
+            Section(header: Text("Note Title").font(.headline)) {
 
-                editorHeader
+                TextField("Enter note title", text: $note.title)
+                    .onChange(of: note.title) { _ in autoSave() }
+            }
 
-                ScrollView {
-                    VStack(spacing: 0) {
-                        titleSection
-                        divider
-                        contentSection
-                        statsRow
-                        divider
-                        tagsSection
-                        divider
-                        imagesSection
-                        if isReminderSet {
-                            divider
-                            reminderBadgeSection
+            // MARK: Notes / Content — shows Quick List editor if isQuickList, else plain TextEditor
+
+            if isQuickList {
+
+                Section(header:
+                    HStack {
+                        Text("Quick List").font(.headline)
+                        Spacer()
+                        // Add new bullet item
+                        Button {
+                            withAnimation {
+                                bulletItems.append(BulletItem(text: ""))
+                            }
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.purple)
                         }
-                        Color.clear.frame(height: 100)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
+                ) {
+                    // Drag-to-reorder list of bullet items
+                    ForEach($bulletItems) { $item in
+                        HStack(spacing: 10) {
+                            // Tap to check/uncheck
+                            Button {
+                                item.checked.toggle()
+                                syncBulletsToContent()
+                                autoSave()
+                            } label: {
+                                Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(item.checked ? .purple : .gray)
+                                    .font(.system(size: 20))
+                            }
+                            .buttonStyle(.plain)
+
+                            TextField("Item", text: $item.text, onCommit: {
+                                syncBulletsToContent()
+                                autoSave()
+                            })
+                            .foregroundColor(item.checked ? .secondary : .primary)
+                            .strikethrough(item.checked)
+                        }
+                    }
+                    .onMove { from, to in
+                        bulletItems.move(fromOffsets: from, toOffset: to)
+                        syncBulletsToContent()
+                        autoSave()
+                    }
+                    .onDelete { offsets in
+                        bulletItems.remove(atOffsets: offsets)
+                        syncBulletsToContent()
+                        autoSave()
+                    }
                 }
 
-                bottomToolbar
+            } else {
+
+                Section(header: Text("Notes").font(.headline)) {
+
+                    ZStack(alignment: .topLeading) {
+                        if note.content.isEmpty {
+                            Text("Write something…")
+                                .foregroundColor(Color(UIColor.placeholderText))
+                                .padding(.top, 8)
+                                .padding(.leading, 4)
+                                .allowsHitTesting(false)
+                        }
+                        TextEditor(text: $note.content)
+                            .frame(minHeight: 120)
+                            .onChange(of: note.content) { value in
+                                if value.hasSuffix("\n• ") == false, value.last == "\n" {
+                                    let lines = value.split(separator: "\n")
+                                    if let last = lines.last, last.hasPrefix("• ") {
+                                        note.content += "• "
+                                    }
+                                }
+                                autoSave()
+                            }
+                    }
+                }
+            }
+            // MARK: Stats
+
+            Section(header: Text("Stats").font(.headline)) {
+
+                HStack(spacing: 0) {
+                    statSeg(value: "\(charCount)", label: "chars")
+                    Divider()
+                    statSeg(value: "\(wordCount)", label: "words")
+                    Divider()
+                    statSeg(value: "~\(readMin)m", label: "read")
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            // MARK: Due Date & Time
+
+            Section(header: Text("Due Date & Time").font(.headline)) {
+
+                if isReminderSet {
+
+                    DatePicker(
+                        "Due",
+                        selection: $reminderDate,
+                        in: Date()...,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .onChange(of: reminderDate) { newDate in
+                        note.reminder = newDate
+                        // Reschedule notification with updated time
+                        scheduleNotification(for: note, at: newDate)
+                        autoSave()
+                    }
+
+                    Button(role: .destructive) {
+                        isReminderSet = false
+                        note.reminder = nil
+                        cancelNotification(for: note)
+                        autoSave()
+                    } label: {
+                        HStack {
+                            Image(systemName: "xmark.circle")
+                            Text("Remove Reminder")
+                        }
+                    }
+
+                } else {
+
+                    Button {
+                        isReminderSet = true
+                        note.reminder = reminderDate
+                        // Schedule the local notification
+                        scheduleNotification(for: note, at: reminderDate)
+                        autoSave()
+                    } label: {
+                        HStack {
+                            Image(systemName: "clock")
+                            Text("Set Reminder")
+                        }
+                        .foregroundColor(.purple)
+                    }
+                }
+            }
+
+            // MARK: Tags
+
+            Section(header: Text("Tags").font(.headline)) {
+
+                HStack(spacing: 6) {
+                    Image(systemName: "number")
+                        .foregroundColor(.secondary)
+                    TextField("#ideas  #work  #study", text: $tags)
+                }
+            }
+
+
+            // MARK: Attachments
+
+            Section(header: Text("Attachments").font(.headline)) {
+
+                Button {
+                    isImagePickerPresented = true
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                } label: {
+                    HStack {
+                        Image(systemName: "photo.badge.plus")
+                        Text("Add Photo")
+                    }
+                    .foregroundColor(.purple)
+                }
+
+                if !note.images.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(note.images) { img in
+                                Image(uiImage: img.image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 78, height: 70)
+                                    .clipped()
+                                    .cornerRadius(12)
+                                    .onTapGesture { selectedImage = img }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .accentColor(.purple)
+
+        .toolbar {
+
+            ToolbarItem(placement: .principal) {
+                Text(
+                    note.title.isEmpty
+                        ? "New Note"
+                        : (note.title.count > 25
+                           ? String(note.title.prefix(25)) + "…"
+                           : note.title)
+                )
+                .font(.headline)
+                .lineLimit(1)
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                    syncBulletsToContent()
+                    autoSave()
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    presentationMode.wrappedValue.dismiss()
+                }
+                .foregroundColor(.purple)
+            }
+
+            // Centered quick-insert buttons in bottom bar
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
+                // Toggle Quick List mode
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    if isQuickList {
+                        // Exit Quick List — sync back to plain text
+                        syncBulletsToContent()
+                        isQuickList = false
+                    } else {
+                        // Enter Quick List — parse existing content into bullets
+                        parseBulletsFromContent()
+                        isQuickList = true
+                    }
+                } label: {
+                    Image(systemName: isQuickList ? "list.bullet.circle.fill" : "list.bullet")
+                        .font(.system(size: 18))
+                        .foregroundColor(isQuickList ? .purple : .secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+                tbBtn("checklist")   { note.content += "\n☑ " }
+                Spacer()
+                tbBtn("link")        { showingLinkInput = true }
+                Spacer()
+                tbBtn("clock", tint: isReminderSet ? .purple : .secondary) {
+                    isReminderSet = true
+                    note.reminder = reminderDate
+                    scheduleNotification(for: note, at: reminderDate)
+                    autoSave()
+                }
+                Spacer()
             }
         }
 
-        .navigationBarHidden(true)
+        .onAppear {
+            // Detect if this is a quick list note
+            if note.title == "Quick List" || note.content.hasPrefix("• ") {
+                parseBulletsFromContent()
+                isQuickList = true
+            }
+            isReminderSet = note.reminder != nil
+            if let r = note.reminder { reminderDate = r }
+        }
 
         .sheet(isPresented: $isImagePickerPresented) {
             ImagePicker(images: $note.images)
         }
-
-        .sheet(isPresented: $showReminderPicker) {
-            reminderSheet
-        }
-
         .alert("Insert Link", isPresented: $showingLinkInput) {
             TextField("https://example.com", text: $linkText)
             Button("Add") {
@@ -91,548 +332,110 @@ struct EditNoteView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-
-        .fullScreenCover(item: $selectedImage) { image in
-            ImageViewer(image: image.image)
+        .fullScreenCover(item: $selectedImage) { img in
+            ImageViewer(image: img.image)
         }
-
         .onDisappear {
+            syncBulletsToContent()
             autoSave()
         }
     }
 
-    // MARK: - Editor Header
+    // MARK: - Quick List helpers
 
-    var editorHeader: some View {
-
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Rectangle()
-                        .fill(Color.purple.opacity(0.06))
-                )
-
-            HStack {
-
-                // Back button
-                Button {
-                    let impact = UIImpactFeedbackGenerator(style: .light)
-                    impact.impactOccurred()
-                    autoSave()
-                    presentationMode.wrappedValue.dismiss()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("Notes")
-                            .font(.system(size: 15, weight: .medium))
-                    }
-                    .foregroundColor(.purple)
-                }
-
-                Spacer()
-
-                // Title
-                VStack(spacing: 2) {
-                    Text(note.title.isEmpty ? "New Note" : note.title)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-
-                    if isReminderSet {
-                        HStack(spacing: 4) {
-                            Image(systemName: "alarm.fill")
-                                .font(.system(size: 9))
-                            Text(reminderDate.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(.orange.opacity(0.8))
-                    }
-                }
-
-                Spacer()
-
-                // Save indicator / menu
-                Button {
-                    autoSave()
-                    let impact = UINotificationFeedbackGenerator()
-                    impact.notificationOccurred(.success)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 13))
-                        Text("Saved")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(.purple.opacity(0.7))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(Color.purple.opacity(0.1))
-                            .overlay(Capsule().stroke(Color.purple.opacity(0.2), lineWidth: 1))
-                    )
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+    /// Parse note.content lines into bulletItems for reorderable UI
+    private func parseBulletsFromContent() {
+        let lines = note.content
+            .components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        bulletItems = lines.map { line -> BulletItem in
+            var text = line
+            var checked = false
+            if text.hasPrefix("✓ ") { text = String(text.dropFirst(2)); checked = true }
+            else if text.hasPrefix("• ") { text = String(text.dropFirst(2)) }
+            return BulletItem(text: text, checked: checked)
         }
-        .frame(height: 60)
-    }
-
-    // MARK: - Title Section
-
-    var titleSection: some View {
-
-        VStack(alignment: .leading, spacing: 10) {
-
-            // Date + Reminder row
-            HStack(spacing: 12) {
-
-                HStack(spacing: 5) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 10))
-                    Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 12))
-                }
-                .foregroundColor(.white.opacity(0.35))
-
-                if isReminderSet {
-                    HStack(spacing: 4) {
-                        Image(systemName: "alarm.fill")
-                            .font(.system(size: 10))
-                        Text(reminderDate.formatted(date: .omitted, time: .shortened))
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundColor(.orange.opacity(0.8))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.orange.opacity(0.12)))
-                }
-
-                Spacer()
-            }
-            .padding(.top, 16)
-
-            // Title field
-            TextField("Idea...", text: $note.title, axis: .vertical)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                .tint(.purple)
-                .onChange(of: note.title) { _ in autoSave() }
+        if bulletItems.isEmpty {
+            bulletItems = [BulletItem(text: "")]
         }
     }
 
-    // MARK: - Content Section
-
-    var contentSection: some View {
-
-        VStack(alignment: .leading, spacing: 0) {
-
-            ZStack(alignment: .topLeading) {
-
-                if note.content.isEmpty {
-                    Text("Write something...")
-                        .font(.system(size: 16))
-                        .foregroundColor(.white.opacity(0.2))
-                        .padding(.top, 16)
-                        .padding(.leading, 2)
-                }
-
-                TextEditor(text: $note.content)
-                    .font(.system(size: 16))
-                    .foregroundColor(.white.opacity(0.85))
-                    .scrollContentBackground(.hidden)
-                    .tint(.purple)
-                    .frame(minHeight: 200)
-                    .padding(.vertical, 10)
-                    .onChange(of: note.content) { value in
-
-                        // Bullet auto-continuation
-                        if value.hasSuffix("\n• ") == false && value.last == "\n" {
-                            let lines = value.split(separator: "\n")
-                            if let last = lines.last, last.hasPrefix("• ") {
-                                note.content += "• "
-                            }
-                        }
-                        autoSave()
-                    }
+    /// Write bulletItems back into note.content
+    private func syncBulletsToContent() {
+        guard isQuickList else { return }
+        note.content = bulletItems
+            .map { item in
+                item.checked ? "✓ \(item.text)" : "• \(item.text)"
             }
-        }
-        .padding(.top, 12)
+            .joined(separator: "\n")
     }
 
-    // MARK: - Stats Row
+    // MARK: - Notification helpers
 
-    var statsRow: some View {
+    /// Schedule a local notification for this note at the given date
+    private func scheduleNotification(for note: Note, at date: Date) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized else { return }
 
-        HStack(spacing: 14) {
+            let content = UNMutableNotificationContent()
+            content.title = note.title.isEmpty ? "Note Reminder" : note.title
+            content.body  = note.content.isEmpty
+                ? "You have a reminder for this note."
+                : String(note.content.prefix(100))
+            content.sound = .default
+            content.badge = 1
 
-            statChip(icon: "character.cursor.ibeam", label: "\(note.content.count) chars")
-            statChip(icon: "text.word.spacing", label: "\(wordCount) words")
-            statChip(icon: "book", label: "~\(readingMinutes) min")
-
-            Spacer()
-        }
-        .padding(.vertical, 14)
-    }
-
-    func statChip(icon: String, label: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 10))
-            Text(label)
-                .font(.system(size: 12, weight: .medium))
-        }
-        .foregroundColor(.white.opacity(0.35))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(
-            Capsule()
-                .fill(Color.white.opacity(0.05))
-                .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
-        )
-    }
-
-    // MARK: - Tags Section
-
-    var tagsSection: some View {
-
-        VStack(alignment: .leading, spacing: 10) {
-
-            HStack(spacing: 6) {
-                Image(systemName: "tag")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.purple.opacity(0.8))
-                Text("Tags")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
-            }
-            .padding(.top, 16)
-
-            HStack(spacing: 6) {
-                Image(systemName: "number")
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.25))
-
-                TextField("#ideas  #work  #study", text: $tags)
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.7))
-                    .tint(.purple)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                    )
+            let comps = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: date
             )
-            .padding(.bottom, 16)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+
+            // Use note.id as the notification identifier so we can cancel/replace it
+            let request = UNNotificationRequest(
+                identifier: note.id.uuidString,
+                content: content,
+                trigger: trigger
+            )
+
+            UNUserNotificationCenter.current().add(request) { _ in }
         }
     }
 
-    // MARK: - Images Section
-
-    var imagesSection: some View {
-
-        VStack(alignment: .leading, spacing: 12) {
-
-            HStack(spacing: 6) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.purple.opacity(0.8))
-                Text("Attachments")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
-
-                Spacer()
-
-                if !note.images.isEmpty {
-                    Text("\(note.images.count) image\(note.images.count == 1 ? "" : "s")")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.3))
-                }
-            }
-            .padding(.top, 16)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-
-                HStack(spacing: 12) {
-
-                    // Add button
-                    Button {
-                        isImagePickerPresented = true
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
-                    } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 20, weight: .light))
-                                .foregroundColor(.purple.opacity(0.7))
-                            Text("Add")
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.35))
-                        }
-                        .frame(width: 100, height: 90)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color.purple.opacity(0.06))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .strokeBorder(
-                                            style: StrokeStyle(lineWidth: 1.5, dash: [6]),
-                                            antialiased: true
-                                        )
-                                        .foregroundColor(Color.purple.opacity(0.25))
-                                )
-                        )
-                    }
-
-                    // Image previews
-                    ForEach(note.images) { img in
-
-                        ZStack(alignment: .topTrailing) {
-
-                            Image(uiImage: img.image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 100, height: 90)
-                                .clipped()
-                                .cornerRadius(14)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                                )
-                                .onTapGesture {
-                                    selectedImage = img
-                                }
-
-                            Button {
-                                withAnimation(.spring(response: 0.3)) {
-                                    note.images.removeAll { $0.id == img.id }
-                                }
-                                autoSave()
-                                let impact = UIImpactFeedbackGenerator(style: .medium)
-                                impact.impactOccurred()
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.black.opacity(0.65))
-                                        .frame(width: 22, height: 22)
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundColor(.white)
-                                }
-                            }
-                            .padding(5)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-            .padding(.bottom, 16)
-        }
+    /// Cancel any pending notification for this note
+    private func cancelNotification(for note: Note) {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: [note.id.uuidString])
     }
 
-    // MARK: - Reminder Badge Section
+    // MARK: - Stat Segment
 
-    var reminderBadgeSection: some View {
-
-        HStack(spacing: 10) {
-
-            Image(systemName: "alarm.fill")
-                .font(.system(size: 13))
-                .foregroundColor(.orange)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Reminder set")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.8))
-                Text(reminderDate.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 12))
-                    .foregroundColor(.orange.opacity(0.8))
-            }
-
-            Spacer()
-
-            Button {
-                isReminderSet = false
-                autoSave()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white.opacity(0.4))
-                    .padding(6)
-                    .background(Circle().fill(Color.white.opacity(0.06)))
-            }
+    private func statSeg(value: String, label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.orange.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.orange.opacity(0.15), lineWidth: 1)
-                )
-        )
-        .padding(.top, 16)
-        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Bottom Toolbar
+    // MARK: - Toolbar Button
 
-    var bottomToolbar: some View {
-
-        ZStack {
-
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Rectangle().fill(Color.purple.opacity(0.04))
-                )
-                .ignoresSafeArea(edges: .bottom)
-
-            HStack(spacing: 0) {
-
-                toolbarButton(icon: "list.bullet") {
-                    note.content += "\n• "
-                }
-
-                toolbarButton(icon: "checklist") {
-                    note.content += "\n☑ "
-                }
-
-                toolbarButton(icon: "link") {
-                    showingLinkInput = true
-                }
-
-                toolbarButton(icon: "photo.badge.plus") {
-                    isImagePickerPresented = true
-                }
-
-                toolbarButton(icon: "alarm") {
-                    showReminderPicker = true
-                }
-
-                Spacer()
-
-                // Character count mini
-                Text("\(note.content.count)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.2))
-                    .padding(.trailing, 20)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-            .padding(.bottom, 4)
-        }
-        .frame(height: 60)
-    }
-
-    func toolbarButton(icon: String, action: @escaping () -> Void) -> some View {
+    private func tbBtn(_ icon: String, tint: Color = .secondary, action: @escaping () -> Void) -> some View {
         Button {
-            let impact = UIImpactFeedbackGenerator(style: .light)
-            impact.impactOccurred()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
+                .font(.system(size: 18))
+                .foregroundColor(tint)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
-    // MARK: - Reminder Sheet
-
-    var reminderSheet: some View {
-
-        ZStack {
-
-            Color(red: 0.08, green: 0.08, blue: 0.11).ignoresSafeArea()
-
-            VStack(spacing: 24) {
-
-                // Handle
-                Capsule()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 40, height: 4)
-                    .padding(.top, 12)
-
-                HStack {
-                    Image(systemName: "alarm.fill")
-                        .foregroundColor(.orange)
-                        .font(.system(size: 18))
-                    Text("Set Reminder")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                }
-
-                DatePicker(
-                    "",
-                    selection: $reminderDate,
-                    in: Date()...,
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-                .datePickerStyle(.graphical)
-                .tint(.purple)
-                .colorScheme(.dark)
-                .padding(.horizontal, 10)
-
-                // Set Reminder button
-                Button {
-                    isReminderSet = true
-                    autoSave()
-                    showReminderPicker = false
-
-                    let impact = UINotificationFeedbackGenerator()
-                    impact.notificationOccurred(.success)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "alarm.fill")
-                            .font(.system(size: 15))
-                        Text("Set Reminder")
-                            .font(.system(size: 16, weight: .semibold))
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(
-                                LinearGradient(
-                                    colors: [.orange, .orange.opacity(0.7)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .shadow(color: .orange.opacity(0.3), radius: 10, x: 0, y: 4)
-                    )
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 30)
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.hidden)
-    }
-
-    // MARK: - Divider
-
-    var divider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.06))
-            .frame(height: 1)
-    }
-
-    // MARK: - Auto Save
-
-    func autoSave() {
-        viewModel.addOrUpdate(note: note)
-    }
+    func autoSave() { viewModel.addOrUpdate(note: note) }
 }
