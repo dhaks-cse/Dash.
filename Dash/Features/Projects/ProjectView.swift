@@ -1,7 +1,5 @@
-//
 //  ProjectView.swift
 //  Dash
-//
 
 import SwiftUI
 
@@ -36,10 +34,10 @@ struct ProjectView: View {
         static let textTer = Color(UIColor.systemGray3)
 
         static let accent = Color.purple
-        static let green = Color.green
-        static let orange = Color.orange
+        static let green = Color.purple
+        static let orange = Color.purple
         static let red = Color.red
-
+        
         static let hPad: CGFloat = 18
         static let cardR: CGFloat = 18
     }
@@ -76,8 +74,6 @@ struct ProjectView: View {
         }.count
     }
 
-    // MARK: Body
-
     var body: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -97,14 +93,11 @@ struct ProjectView: View {
                     showingAddProject = true
                 }
 
-                // Hidden NavigationLink — logic unchanged
                 NavigationLink(
                     destination: selectedProject.map { proj in
                         ProjectDetailView(
                             project: Binding(
-                                get: {
-                                    projects.first { $0.id == proj.id } ?? proj
-                                },
+                                get: { projects.first { $0.id == proj.id } ?? proj },
                                 set: { nv in
                                     if let i = projects.firstIndex(where: { $0.id == proj.id }) {
                                         projects[i] = nv
@@ -129,13 +122,12 @@ struct ProjectView: View {
         }
     }
 
-    // MARK: Header — bell · title · menu, identical rhythm to NotesView / Planner
+    // MARK: Header
 
     var headerBar: some View {
         HStack {
-            // Icon placeholder (matches planner left-icon position)
             Image(systemName: "folder")
-                .font(.system(size: 17, weight: .regular))
+                .font(.system(size: 17))
                 .foregroundColor(DS.textSec)
                 .frame(width: 36, height: 36)
 
@@ -162,7 +154,7 @@ struct ProjectView: View {
         .background(DS.bg)
     }
 
-    // MARK: Search — same as NotesView
+    // MARK: Search
 
     var searchBar: some View {
         HStack(spacing: 8) {
@@ -181,15 +173,14 @@ struct ProjectView: View {
                         .font(.system(size: 14))
                         .foregroundColor(DS.textTer)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(DS.card)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(DS.border, lineWidth: 0.5)
         )
         .padding(.horizontal, DS.hPad)
@@ -306,7 +297,7 @@ struct ProjectView: View {
         let days  = Calendar.current.dateComponents([.day], from: today, to: end).day ?? 0
 
         let deadlineColor: Color = project.isProjectCompleted ? DS.textTer
-            : (days < 0 ? DS.red : days <= 10 ? DS.orange : DS.green)
+            : (days < 0 ? DS.red : DS.accent)
 
         return HStack(alignment: .top, spacing: 14) {
 
