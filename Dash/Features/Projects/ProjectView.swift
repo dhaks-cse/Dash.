@@ -14,16 +14,37 @@ struct ProjectView: View {
 
     enum SortOption: String, CaseIterable, Identifiable {
         case startDateDescending = "Newest"
-        case startDateAscending = "Oldest"
-        case nameAscending = "A–Z"
-        case nameDescending = "Z–A"
-        case completedFirst = "Completed"
-        case activeFirst = "Active"
-        case dueSoon = "Due Soon"
+        case startDateAscending  = "Oldest"
+        case nameAscending       = "A–Z"
+        case nameDescending      = "Z–A"
+        case completedFirst      = "Completed"
+        case activeFirst         = "Active"
+        case dueSoon             = "Due Soon"
         var id: String { rawValue }
     }
 
     @State private var sortOption: SortOption = .startDateDescending
+
+    private enum DS {
+        static let bg = Color.black
+        static let card = Color(red: 0.12, green: 0.12, blue: 0.14)
+        static let inputFill = Color(red: 0.18, green: 0.18, blue: 0.20)
+        static let border = Color.white.opacity(0.12)
+
+        static let textPri = Color.white
+        static let textSec = Color(UIColor.systemGray2)
+        static let textTer = Color(UIColor.systemGray3)
+
+        static let accent = Color.purple
+        static let green = Color.green
+        static let orange = Color.orange
+        static let red = Color.red
+
+        static let hPad: CGFloat = 18
+        static let cardR: CGFloat = 18
+    }
+
+    // MARK: Derived
 
     var filteredProjects: [Project] {
         if searchText.isEmpty { return projects }
@@ -36,75 +57,58 @@ struct ProjectView: View {
 
     var sortedProjects: [Project] {
         switch sortOption {
-        case .startDateDescending:
-            return filteredProjects.sorted { $0.startDate > $1.startDate }
-        case .startDateAscending:
-            return filteredProjects.sorted { $0.startDate < $1.startDate }
-        case .nameAscending:
-            return filteredProjects.sorted { $0.name.lowercased() < $1.name.lowercased() }
-        case .nameDescending:
-            return filteredProjects.sorted { $0.name.lowercased() > $1.name.lowercased() }
-        case .completedFirst:
-            return filteredProjects.sorted { ($0.isProjectCompleted ? 0 : 1) < ($1.isProjectCompleted ? 0 : 1) }
-        case .activeFirst:
-            return filteredProjects.sorted { ($0.isProjectCompleted ? 0 : 1) > ($1.isProjectCompleted ? 0 : 1) }
-        case .dueSoon:
-            return filteredProjects.sorted { $0.endDate < $1.endDate }
+        case .startDateDescending: return filteredProjects.sorted { $0.startDate > $1.startDate }
+        case .startDateAscending:  return filteredProjects.sorted { $0.startDate < $1.startDate }
+        case .nameAscending:       return filteredProjects.sorted { $0.name.lowercased() < $1.name.lowercased() }
+        case .nameDescending:      return filteredProjects.sorted { $0.name.lowercased() > $1.name.lowercased() }
+        case .completedFirst:      return filteredProjects.sorted { ($0.isProjectCompleted ? 0 : 1) < ($1.isProjectCompleted ? 0 : 1) }
+        case .activeFirst:         return filteredProjects.sorted { ($0.isProjectCompleted ? 0 : 1) > ($1.isProjectCompleted ? 0 : 1) }
+        case .dueSoon:             return filteredProjects.sorted { $0.endDate < $1.endDate }
         }
     }
 
-    // Quick stats
-    var activeCount: Int { projects.filter { !$0.isProjectCompleted }.count }
-    var completedCount: Int { projects.filter { $0.isProjectCompleted }.count }
-    var overdueCount: Int {
+    var activeCount:    Int { projects.filter { !$0.isProjectCompleted }.count }
+    var completedCount: Int { projects.filter {  $0.isProjectCompleted }.count }
+    var overdueCount:   Int {
         projects.filter {
             !$0.isProjectCompleted &&
             Calendar.current.startOfDay(for: $0.endDate) < Calendar.current.startOfDay(for: Date())
         }.count
     }
 
+    // MARK: Body
+
     var body: some View {
-
         NavigationView {
+            ZStack(alignment: .bottomTrailing) {
 
-            ZStack {
-
-                // Background
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.06, green: 0.06, blue: 0.09),
-                        Color(red: 0.09, green: 0.08, blue: 0.13)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                DS.bg.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    glassHeader
+                    headerBar
                     searchBar
                     statsRow
                     filterBar
                     projectList
                 }
 
-                floatingButton
+                plannerFAB {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showingAddProject = true
+                }
 
-                // Hidden NavigationLink
+                // Hidden NavigationLink — logic unchanged
                 NavigationLink(
-                    destination: selectedProject.map { project in
+                    destination: selectedProject.map { proj in
                         ProjectDetailView(
                             project: Binding(
                                 get: {
-                                    if let index = projects.firstIndex(where: { $0.id == project.id }) {
-                                        return projects[index]
-                                    }
-                                    return project
+                                    projects.first { $0.id == proj.id } ?? proj
                                 },
-                                set: { newValue in
-                                    if let index = projects.firstIndex(where: { $0.id == project.id }) {
-                                        projects[index] = newValue
-                                        saveProjectsToStorage()
+                                set: { nv in
+                                    if let i = projects.firstIndex(where: { $0.id == proj.id }) {
+                                        projects[i] = nv
+                                        saveProjects()
                                     }
                                 }
                             ),
@@ -117,193 +121,149 @@ struct ProjectView: View {
                     )
                 ) { EmptyView() }
             }
-
             .navigationBarHidden(true)
-
             .sheet(isPresented: $showingAddProject) {
                 AddProjectView(projects: $projects)
             }
-
             .onAppear { loadProjects() }
         }
     }
 
-    // MARK: - Glass Header
+    // MARK: Header — bell · title · menu, identical rhythm to NotesView / Planner
 
-    var glassHeader: some View {
+    var headerBar: some View {
+        HStack {
+            // Icon placeholder (matches planner left-icon position)
+            Image(systemName: "folder")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundColor(DS.textSec)
+                .frame(width: 36, height: 36)
 
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(Rectangle().fill(Color.purple.opacity(0.06)))
-                .ignoresSafeArea(edges: .top)
+            Spacer()
 
-            HStack {
-
-                // Left: icon
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.08))
-                        .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "folder.badge.gearshape")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                }
-
-                Spacer()
-
-                // Center: title
-                VStack(spacing: 2) {
-                    Text("Projects")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    Text("\(projects.count) total")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.purple.opacity(0.8))
-                }
-
-                Spacer()
-
-                // Right: menu
-                AppMenuButton()
-                    .frame(width: 40, height: 40)
-                    .background(
-                        Circle()
-                            .fill(Color.white.opacity(0.08))
-                            .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    )
+            VStack(spacing: 2) {
+                Text("Projects")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(DS.textPri)
+                Text("\(projects.count) total")
+                    .font(.system(size: 12))
+                    .foregroundColor(DS.textSec)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
+
+            Spacer()
+
+            AppMenuButton()
+                .frame(width: 36, height: 36)
+                .foregroundColor(DS.textSec)
         }
-        .frame(height: 80)
+        .padding(.horizontal, DS.hPad)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(DS.bg)
     }
 
-    // MARK: - Search Bar
+    // MARK: Search — same as NotesView
 
     var searchBar: some View {
-
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.white.opacity(0.4))
+                .font(.system(size: 14))
+                .foregroundColor(DS.textTer)
 
-            TextField("Search projects...", text: $searchText)
+            TextField("Search projects…", text: $searchText)
                 .font(.system(size: 15))
-                .foregroundColor(.white)
-                .tint(.purple)
+                .foregroundColor(DS.textPri)
+                .tint(DS.accent)
 
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.white.opacity(0.3))
+                        .font(.system(size: 14))
+                        .foregroundColor(DS.textTer)
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.07))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
+        .padding(.vertical, 10)
+        .background(DS.card)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(DS.border, lineWidth: 0.5)
         )
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.horizontal, DS.hPad)
+        .padding(.bottom, 12)
     }
 
-    // MARK: - Stats Row
+    // MARK: Stats Row — three metric cards, same layout as planner's progress row
 
     var statsRow: some View {
-
-        HStack(spacing: 10) {
-
-            statCard(value: "\(activeCount)", label: "Active", color: .purple, icon: "bolt.fill")
-            statCard(value: "\(completedCount)", label: "Done", color: .green, icon: "checkmark.seal.fill")
-            statCard(value: "\(overdueCount)", label: "Overdue", color: .red, icon: "exclamationmark.triangle.fill")
+        HStack(spacing: 8) {
+            statCard(value: "\(activeCount)",    label: "Active",  color: DS.accent,  icon: "bolt.fill")
+            statCard(value: "\(completedCount)", label: "Done",    color: DS.green,   icon: "checkmark.seal.fill")
+            statCard(value: "\(overdueCount)",   label: "Overdue", color: DS.red,     icon: "exclamationmark.triangle.fill")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 4)
+        .padding(.horizontal, DS.hPad)
+        .padding(.bottom, 12)
     }
 
-    func statCard(value: String, label: String, color: Color, icon: String) -> some View {
-
+    private func statCard(value: String, label: String, color: Color, icon: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(color)
-
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(DS.textPri)
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.4))
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.textSec)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(color.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(color.opacity(0.15), lineWidth: 1)
-                )
+        .background(DS.card)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DS.border, lineWidth: 0.5)
         )
     }
 
-    // MARK: - Filter Bar
+    // MARK: Filter Bar — planner pill segmented bar
 
     var filterBar: some View {
-
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(SortOption.allCases) { option in
+                ForEach(SortOption.allCases) { opt in
                     Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            sortOption = option
-                        }
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
+                        withAnimation(.easeInOut(duration: 0.15)) { sortOption = opt }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
-                        Text(option.rawValue)
-                            .font(.system(size: 13, weight: sortOption == option ? .semibold : .regular))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
+                        Text(opt.rawValue)
+                            .font(.system(size: 14, weight: sortOption == opt ? .medium : .regular))
+                            .foregroundColor(sortOption == opt ? DS.textPri : DS.textSec)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
                             .background(
                                 Capsule()
-                                    .fill(sortOption == option ? Color.purple : Color.white.opacity(0.07))
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(
-                                                sortOption == option ? Color.purple.opacity(0.5) : Color.white.opacity(0.06),
-                                                lineWidth: 1
-                                            )
-                                    )
+                                    .fill(sortOption == opt ? DS.accent : DS.card)
                             )
-                            .foregroundColor(sortOption == option ? .white : .white.opacity(0.55))
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, DS.hPad)
         }
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(.bottom, 12)
     }
 
-    // MARK: - Project List
+    // MARK: Project List
 
     var projectList: some View {
-
         Group {
             if sortedProjects.isEmpty {
                 emptyState
@@ -311,341 +271,272 @@ struct ProjectView: View {
                 List {
                     ForEach(sortedProjects) { project in
                         projectCard(project)
-                            .listRowInsets(EdgeInsets())
+                            .listRowInsets(EdgeInsets(top: 4, leading: DS.hPad, bottom: 4, trailing: DS.hPad))
                             .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .padding(.vertical, 5)
-                            .padding(.horizontal, 16)
+                            .listRowBackground(DS.bg)
                             .onTapGesture {
-                                let impact = UIImpactFeedbackGenerator(style: .light)
-                                impact.impactOccurred()
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 selectedProject = project
                             }
                             .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    deleteProject(project)
-                                } label: {
+                                Button(role: .destructive) { deleteProject(project) } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
                     }
 
-                    Color.clear
-                        .frame(height: 90)
+                    Color.clear.frame(height: 100)
                         .listRowInsets(EdgeInsets())
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                .background(DS.bg)
             }
         }
     }
 
-    // MARK: - Empty State
-
-    var emptyState: some View {
-
-        VStack(spacing: 16) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(Color.purple.opacity(0.08))
-                    .frame(width: 90, height: 90)
-                Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 36, weight: .light))
-                    .foregroundColor(.purple.opacity(0.5))
-            }
-
-            Text("No Projects Yet")
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
-                .foregroundColor(.white.opacity(0.6))
-
-            Text("Tap + to create your first project")
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.3))
-
-            Spacer()
-        }
-    }
-
-    // MARK: - Project Card
+    // MARK: Project Card — mirrors planner task card structure exactly
 
     private func projectCard(_ project: Project) -> some View {
 
-        let daysLeft = Calendar.current.dateComponents(
-            [.day],
-            from: Calendar.current.startOfDay(for: Date()),
-            to: Calendar.current.startOfDay(for: project.endDate)
-        ).day ?? 0
+        let today = Calendar.current.startOfDay(for: Date())
+        let end   = Calendar.current.startOfDay(for: project.endDate)
+        let days  = Calendar.current.dateComponents([.day], from: today, to: end).day ?? 0
 
-        let deadlineColor: Color = project.isProjectCompleted ? .gray :
-            (daysLeft < 0 ? .red : daysLeft <= 10 ? .orange : .green)
+        let deadlineColor: Color = project.isProjectCompleted ? DS.textTer
+            : (days < 0 ? DS.red : days <= 10 ? DS.orange : DS.green)
 
-        return VStack(spacing: 0) {
+        return HStack(alignment: .top, spacing: 14) {
 
-            HStack(spacing: 0) {
+            // Left: status circle — mirrors planner task completion circle
+            ZStack {
+                if project.isProjectCompleted {
+                    Circle()
+                        .fill(DS.green)
+                        .frame(width: 22, height: 22)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                } else if days < 0 {
+                    Circle()
+                        .strokeBorder(DS.red, lineWidth: 1.5)
+                        .frame(width: 22, height: 22)
+                    Image(systemName: "exclamationmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(DS.red)
+                } else {
+                    Circle()
+                        .strokeBorder(DS.border, lineWidth: 1.5)
+                        .frame(width: 22, height: 22)
+                    Image(systemName: "folder")
+                        .font(.system(size: 9))
+                        .foregroundColor(DS.textTer)
+                }
+            }
+            .padding(.top, 2)
 
-                // Accent bar
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(
-                        LinearGradient(
-                            colors: project.isProjectCompleted
-                                ? [Color.gray.opacity(0.5), Color.gray.opacity(0.3)]
-                                : [Color.purple, Color.purple.opacity(0.5)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(width: 4)
-                    .padding(.vertical, 14)
-                    .padding(.leading, 14)
+            // Right: content block
+            VStack(alignment: .leading, spacing: 8) {
 
-                VStack(alignment: .leading, spacing: 10) {
+                // Title + status badge — mirrors planner's "Medium" / "High" pill
+                HStack(alignment: .top) {
+                    Text(project.name.isEmpty ? "Untitled" : project.name)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(project.isProjectCompleted ? DS.textSec : DS.textPri)
+                        .strikethrough(project.isProjectCompleted, color: DS.textTer)
+                        .lineLimit(1)
 
-                    // Title + type row
-                    HStack(spacing: 8) {
+                    Spacer()
 
-                        Text(project.name.isEmpty ? "Untitled" : project.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(project.isProjectCompleted ? .white.opacity(0.4) : .white)
-                            .strikethrough(project.isProjectCompleted, color: .white.opacity(0.3))
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        if project.isProjectCompleted {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.seal.fill")
-                                    .font(.system(size: 9))
-                                Text("Done")
-                                    .font(.system(size: 10, weight: .semibold))
-                            }
-                            .foregroundColor(.green.opacity(0.8))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(Color.green.opacity(0.1)))
-                        } else if !project.projectType.isEmpty {
-                            Text(project.projectType)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.purple.opacity(0.8))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Color.purple.opacity(0.1)))
-                                .lineLimit(1)
-                        }
+                    // Status pill — same pill style as planner priority tag
+                    if project.isProjectCompleted {
+                        statusPill("Completed", color: DS.green)
+                    } else if days < 0 {
+                        statusPill("Overdue", color: DS.red)
+                    } else if !project.projectType.isEmpty {
+                        statusPill(project.projectType, color: DS.accent)
                     }
+                }
 
-                    // Customer + developer
+                // Customer / developer meta
+                if !project.customer.isEmpty || !project.developer.isEmpty {
                     HStack(spacing: 12) {
-
                         if !project.customer.isEmpty {
                             HStack(spacing: 4) {
                                 Image(systemName: "person")
                                     .font(.system(size: 10))
                                 Text(project.customer)
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 13))
                                     .lineLimit(1)
                             }
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(DS.textSec)
                         }
-
                         if !project.developer.isEmpty {
                             HStack(spacing: 4) {
                                 Image(systemName: "hammer")
                                     .font(.system(size: 10))
                                 Text(project.developer)
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 13))
                                     .lineLimit(1)
                             }
-                            .foregroundColor(.white.opacity(0.35))
+                            .foregroundColor(DS.textTer)
                         }
-
                         Spacer()
-                    }
-
-                    // Progress bar
-                    VStack(alignment: .leading, spacing: 5) {
-
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.white.opacity(0.07))
-                                    .frame(height: 6)
-
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: project.isProjectCompleted
-                                                ? [Color.green.opacity(0.7), Color.green.opacity(0.4)]
-                                                : [Color.purple, Color.purple.opacity(0.6)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: geo.size.width * CGFloat(project.progress), height: 6)
-                            }
-                        }
-                        .frame(height: 6)
-                    }
-
-                    // Footer: deadline + amount + github
-                    HStack(spacing: 10) {
-
-                        // Deadline
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 9))
-                            Text(deadlineLabel(for: project))
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundColor(deadlineColor)
-
-                        Text("·")
-                            .foregroundColor(.white.opacity(0.2))
-
-                        // Progress %
-                        Text("\(Int(project.progress * 100))%")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.35))
-
-                        Spacer()
-
-                        // Amount
-                        if project.totalAmount > 0 {
-                            HStack(spacing: 3) {
-                                Image(systemName: "banknote")
-                                    .font(.system(size: 9))
-                                Text(String(format: "%.0f", project.totalAmount))
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .foregroundColor(.green.opacity(0.7))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(Color.green.opacity(0.08)))
-                        }
-
-                        // GitHub link
-                        if !project.githubRepo.isEmpty {
-                            Button {
-                                if let url = URL(string: project.githubRepo) {
-                                    UIApplication.shared.open(url)
-                                }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "chevron.left.forwardslash.chevron.right")
-                                        .font(.system(size: 9, weight: .semibold))
-                                    Text("Repo")
-                                        .font(.system(size: 10, weight: .semibold))
-                                }
-                                .foregroundColor(.purple.opacity(0.8))
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(Color.purple.opacity(0.1)))
-                            }
-                        }
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
+
+                // Progress bar — mirrors planner's Today's Progress bar exactly
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(DS.inputFill)
+                            .frame(height: 5)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(project.isProjectCompleted ? DS.green : DS.accent)
+                            .frame(width: geo.size.width * CGFloat(project.progress), height: 5)
+                    }
+                }
+                .frame(height: 5)
+
+                // Footer meta row
+                HStack(spacing: 8) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 9))
+                        Text(deadlineLabel(for: project))
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundColor(deadlineColor)
+
+                    Text("·")
+                        .foregroundColor(DS.textTer)
+
+                    Text("\(Int(project.progress * 100))%")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundColor(DS.textTer)
+
+                    Spacer()
+
+                    // Amount badge
+                    if project.totalAmount > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "banknote")
+                                .font(.system(size: 9))
+                            Text(String(format: "%.0f", project.totalAmount))
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(DS.green)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(DS.green.opacity(0.12)))
+                    }
+
+                    // GitHub link
+                    if !project.githubRepo.isEmpty {
+                        Button {
+                            if let url = URL(string: project.githubRepo) {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                                    .font(.system(size: 9, weight: .semibold))
+                                Text("Repo")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(DS.accent)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(DS.accent.opacity(0.12)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.14, green: 0.13, blue: 0.18),
-                            Color(red: 0.12, green: 0.11, blue: 0.16)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: Color.black.opacity(0.35), radius: 10, x: 0, y: 4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(DS.card)
+        .clipShape(RoundedRectangle(cornerRadius: DS.cardR, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.cardR, style: .continuous)
+                .stroke(DS.border, lineWidth: 0.5)
         )
     }
 
-    // MARK: - Floating Action Button
-
-    var floatingButton: some View {
-
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-
-                Button {
-                    let impact = UIImpactFeedbackGenerator(style: .medium)
-                    impact.impactOccurred()
-                    showingAddProject = true
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(Color.purple.opacity(0.35))
-                            .frame(width: 64, height: 64)
-                            .blur(radius: 12)
-
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.purple, Color(red: 0.5, green: 0.2, blue: 0.9)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 56, height: 56)
-                            .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
-                            .shadow(color: Color.purple.opacity(0.5), radius: 14, x: 0, y: 6)
-
-                        Image(systemName: "plus")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                }
-                .padding(.bottom, 28)
-                .padding(.trailing, 20)
-            }
-        }
+    // Status pill — same pill style as planner "Medium" / "High" priority badge
+    private func statusPill(_ label: String, color: Color) -> some View {
+        Text(label)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(color)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(color.opacity(0.15)))
     }
 
-    // MARK: - Helpers
+    // MARK: Empty State
+
+    var emptyState: some View {
+        VStack(spacing: 14) {
+            Spacer().frame(height: 80)
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 40, weight: .light))
+                .foregroundColor(DS.textTer)
+            Text("No Projects Yet")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(DS.textSec)
+            Text("Tap + to create your first project")
+                .font(.system(size: 14))
+                .foregroundColor(DS.textTer)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func plannerFAB(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(DS.accent))
+                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 20)
+        .padding(.bottom, 24)
+    }
+
+    // MARK: Helpers
 
     private func deadlineLabel(for project: Project) -> String {
         let today = Calendar.current.startOfDay(for: Date())
-        let end = Calendar.current.startOfDay(for: project.endDate)
-        let daysLeft = Calendar.current.dateComponents([.day], from: today, to: end).day ?? 0
-
+        let end   = Calendar.current.startOfDay(for: project.endDate)
+        let days  = Calendar.current.dateComponents([.day], from: today, to: end).day ?? 0
         if project.isProjectCompleted { return "Completed" }
-        switch daysLeft {
-        case ..<0: return "Overdue \(-daysLeft)d"
-        case 0: return "Due today"
-        case 1: return "Tomorrow"
-        default: return "\(daysLeft)d left"
+        switch days {
+        case ..<0:  return "Overdue \(-days)d"
+        case 0:     return "Due today"
+        case 1:     return "Tomorrow"
+        default:    return "\(days)d left"
         }
     }
 
     private func deleteProject(_ project: Project) {
-        if let index = projects.firstIndex(where: { $0.id == project.id }) {
-            projects.remove(at: index)
-            saveProjectsToStorage()
-        }
+        projects.removeAll { $0.id == project.id }
+        saveProjects()
     }
 
     private func loadProjects() {
-        if let data = UserDefaults.standard.data(forKey: "projects"),
+        if let data  = UserDefaults.standard.data(forKey: "projects"),
            let saved = try? JSONDecoder().decode([Project].self, from: data) {
             projects = saved
         }
     }
 
-    private func saveProjectsToStorage() {
+    private func saveProjects() {
         if let data = try? JSONEncoder().encode(projects) {
             UserDefaults.standard.set(data, forKey: "projects")
         }

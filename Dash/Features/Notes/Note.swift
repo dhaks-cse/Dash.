@@ -17,6 +17,7 @@ struct Note: Identifiable, Codable {
     var createdAt: Date
     var colorHex: String
     var reminder: Date?
+    var isLocked: Bool = false
 
     init(
         id: UUID = UUID(),

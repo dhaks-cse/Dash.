@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct NotesView: View {
 
@@ -13,21 +14,28 @@ struct NotesView: View {
     @State private var searchText = ""
     @State private var pinnedNotes: Set<UUID> = []
     @State private var refreshID = UUID()
-    @State private var showNotifications = false
-    @State private var hasUnreadNotifications = true
 
+    @State private var notificationsEnabled = false
+    @State private var showNotificationAlert = false
+    @State private var showUnlockPrompt = false
+    @State private var showNoteUnlock = false
+    @State private var noteToUnlock: Note?
+    @State private var enteredPassword = ""
+ 
     enum SortOption: String, CaseIterable, Identifiable {
         case createdDescending = "Newest"
-        case createdAscending = "Oldest"
-        case titleAscending = "A–Z"
-        case titleDescending = "Z–A"
+        case createdAscending  = "Oldest"
+        case titleAscending    = "A–Z"
+        case titleDescending   = "Z–A"
         var id: String { rawValue }
     }
 
     @State private var sortOption: SortOption = .createdDescending
 
+    // MARK: - Derived
+
     var filteredNotes: [Note] {
-        if searchText.isEmpty { return viewModel.notes }
+        guard !searchText.isEmpty else { return viewModel.notes }
         return viewModel.notes.filter {
             $0.title.lowercased().contains(searchText.lowercased()) ||
             $0.content.lowercased().contains(searchText.lowercased())
@@ -35,301 +43,415 @@ struct NotesView: View {
     }
 
     var sortedNotes: [Note] {
-        let notes = filteredNotes
-        let sorted: [Note]
+        let base: [Note]
         switch sortOption {
-        case .createdDescending:
-            sorted = notes.sorted { $0.createdAt > $1.createdAt }
-        case .createdAscending:
-            sorted = notes.sorted { $0.createdAt < $1.createdAt }
-        case .titleAscending:
-            sorted = notes.sorted { $0.title.lowercased() < $1.title.lowercased() }
-        case .titleDescending:
-            sorted = notes.sorted { $0.title.lowercased() > $1.title.lowercased() }
+        case .createdDescending: base = filteredNotes.sorted { $0.createdAt > $1.createdAt }
+        case .createdAscending:  base = filteredNotes.sorted { $0.createdAt < $1.createdAt }
+        case .titleAscending:    base = filteredNotes.sorted { $0.title.lowercased() < $1.title.lowercased() }
+        case .titleDescending:   base = filteredNotes.sorted { $0.title.lowercased() > $1.title.lowercased() }
         }
-        return sorted.sorted { pinnedNotes.contains($0.id) && !pinnedNotes.contains($1.id) }
+        return base.sorted { pinnedNotes.contains($0.id) && !pinnedNotes.contains($1.id) }
     }
+
+    var pinnedList: [Note]   { sortedNotes.filter {  pinnedNotes.contains($0.id) } }
+    var unpinnedList: [Note] { sortedNotes.filter { !pinnedNotes.contains($0.id) } }
+
+    // Note count stats
+    var totalNotes: Int    { viewModel.notes.count }
+    var withReminder: Int  { viewModel.notes.filter { $0.reminder != nil }.count }
+
+    // MARK: - Body
 
     var body: some View {
-
         NavigationView {
-
             ZStack {
-
-                // Background gradient
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.06, green: 0.06, blue: 0.09),
-                        Color(red: 0.09, green: 0.08, blue: 0.13)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    glassHeader
-                    searchBar
+
+                    // ── Stats header — mirrors planner's progress header ──
+                    statsHeader
+
+                    Divider()
+                        .background(Color.white.opacity(0.15))
+                        .padding(.horizontal, 18)
+
+                    // ── Filter / Sort bar — mirrors planner's filter bar ──
                     filterBar
-                    notesList
+
+                    // ── Search bar below filter ──
+                    searchBar
+
+                    Divider()
+                        .background(Color.white.opacity(0.15))
+                        .padding(.horizontal, 18)
+
+                    // ── Notes list ──
+                    notesSection
                 }
 
-                floatingButton
+                // FAB
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            let n = Note(title: "", content: "")
+                            viewModel.notes.append(n)
+                            selectedNote = n
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(20)
+                                .background(Circle().fill(Color.purple))
+                                .shadow(radius: 8)
+                        }
+                        .padding(.bottom, 24)
+                        .padding(.trailing, 22)
+                    }
+                }
             }
-
-            .navigationBarHidden(true)
-
+            .navigationTitle("Notes")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 refreshID = UUID()
+                checkNotificationStatus()
             }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        requestOrToggleNotifications()
+                    } label: {
+                        Image(systemName: "bell")
+                            .foregroundColor(.white)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    AppMenuButton()
+                }
+            }
+            .alert("Reminder Notifications", isPresented: $showNotificationAlert) {
+                Button("Enable") {
+                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                        DispatchQueue.main.async { notificationsEnabled = granted }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .alert("Unlock Note", isPresented: $showUnlockPrompt) {
 
-            .background(
-                NavigationLink(
-                    destination: selectedNote.map { selected in
-                        EditNoteView(
-                            note: Binding(
-                                get: {
-                                    viewModel.notes.first(where: { $0.id == selected.id }) ?? selected
-                                },
-                                set: { newValue in
-                                    if let index = viewModel.notes.firstIndex(where: { $0.id == newValue.id }) {
-                                        viewModel.notes[index] = newValue
-                                    }
-                                }
-                            ),
-                            viewModel: viewModel
-                        )
-                    },
-                    isActive: Binding(
-                        get: { selectedNote != nil },
-                        set: { if !$0 { selectedNote = nil } }
-                    )
-                ) { EmptyView() }
-            )
+                SecureField("Enter password", text: $enteredPassword)
+
+                Button("Unlock") {
+
+                    let appPassword = UserDefaults.standard.string(forKey: "appPassword") ?? ""
+
+                    if enteredPassword == appPassword {
+
+                        if let note = noteToUnlock,
+                           let index = viewModel.notes.firstIndex(where: {$0.id == note.id}) {
+
+                            viewModel.notes[index].isLocked = false
+                            openNote(viewModel.notes[index])
+                        }
+                    }
+
+                    enteredPassword = ""
+                }
+
+                Button("Cancel", role: .cancel) {
+                    enteredPassword = ""
+                }
+
+            }
+            message: {
+                Text("Allow Dash to send you reminder notifications for your notes.")
+            }
+            .background(editNoteNavigationLink)
+            .fullScreenCover(isPresented: $showNoteUnlock) {
+
+                PINLockView(onUnlock: {
+
+                    if let note = noteToUnlock,
+                       let index = viewModel.notes.firstIndex(where: { $0.id == note.id }) {
+
+                        viewModel.notes[index].isLocked = false
+                        openNote(viewModel.notes[index])
+                    }
+
+                    showNoteUnlock = false
+                })
+
+            }
         }
     }
 
-    // MARK: - Glass Header
-
-    var glassHeader: some View {
-
-        ZStack {
-
-            // Glass blur background
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.purple.opacity(0.08),
-                                    Color.clear
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+    private var editNoteNavigationLink: some View {
+        NavigationLink(
+            destination: selectedNote.map { sel in
+                EditNoteView(
+                    note: Binding(
+                        get: { viewModel.notes.first { $0.id == sel.id } ?? sel },
+                        set: { nv in
+                            if let i = viewModel.notes.firstIndex(where: { $0.id == nv.id }) {
+                                viewModel.notes[i] = nv
+                            }
+                        }
+                    ),
+                    viewModel: viewModel
                 )
-                .ignoresSafeArea(edges: .top)
+            },
+            isActive: Binding(
+                get: { selectedNote != nil },
+                set: { if !$0 { selectedNote = nil } }
+            )
+        ) {
+            EmptyView()
+        }
+    }
+
+    // MARK: - Stats Header (mirrors planner's progress header)
+
+    var statsHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+
+            Text("Your Notes")
+                .font(.subheadline.weight(.bold))
+                .foregroundColor(.secondary)
+
+            Text("\(totalNotes) note\(totalNotes == 1 ? "" : "s") · \(withReminder) with reminder\(withReminder == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "pin.fill")
+                        .foregroundColor(.purple)
+                    Text("\(pinnedNotes.count) pinned")
+                        .font(.caption)
+                }
 
-                // Notification Bell
+                Spacer()
+
+                // Quick-compose shortcut
                 Button {
-                    hasUnreadNotifications = false
-                    showNotifications.toggle()
-                    let impact = UIImpactFeedbackGenerator(style: .light)
-                    impact.impactOccurred()
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    let n = Note(title: "", content: "• ")
+                    viewModel.notes.append(n)
+                    selectedNote = n
                 } label: {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "bell")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundColor(.white.opacity(0.85))
-                            .frame(width: 40, height: 40)
-                            .background(
-                                Circle()
-                                    .fill(Color.white.opacity(0.08))
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                                    )
-                            )
-
-                        if hasUnreadNotifications {
-                            Circle()
-                                .fill(Color.purple)
-                                .frame(width: 9, height: 9)
-                                .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
-                                .offset(x: 2, y: -2)
-                        }
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet")
+                        Text("Quick List")
                     }
+                    .font(.caption)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.purple.opacity(0.2))
+                    .cornerRadius(8)
                 }
-
-                Spacer()
-
-                // Centered Title
-                VStack(spacing: 2) {
-                    Text("Notes")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    Text("\(viewModel.notes.count) notes")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.purple.opacity(0.8))
-                }
-
-                Spacer()
-
-                // Menu Button
-                AppMenuButton()
-                    .frame(width: 40, height: 40)
-                    .background(
-                        Circle()
-                            .fill(Color.white.opacity(0.08))
-                            .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    )
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
         }
-        .frame(height: 80)
+        .padding(.horizontal, 18)
+        .padding(.top, 6)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Filter Bar (mirrors planner exactly)
+
+    var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(SortOption.allCases) { opt in
+                    Text(opt.rawValue)
+                        .font(.caption)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule().fill(
+                                sortOption == opt
+                                    ? Color.purple
+                                    : Color(UIColor.systemGray5)
+                            )
+                        )
+                        .foregroundColor(sortOption == opt ? .white : .primary)
+                        .onTapGesture {
+                            withAnimation { sortOption = opt }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 6)
+        }
     }
 
     // MARK: - Search Bar
 
     var searchBar: some View {
-
-        HStack(spacing: 10) {
-
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.white.opacity(0.4))
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
 
-            TextField("Search notes...", text: $searchText)
-                .font(.system(size: 15))
-                .foregroundColor(.white)
+            TextField("Search notes…", text: $searchText)
+                .font(.subheadline)
+                .foregroundColor(.primary)
                 .tint(.purple)
 
             if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
+                Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundColor(.secondary)
                 }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.07))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
-    }
-
-    // MARK: - Filter Bar
-
-    var filterBar: some View {
-
-        ScrollView(.horizontal, showsIndicators: false) {
-
-            HStack(spacing: 8) {
-
-                ForEach(SortOption.allCases) { option in
-
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            sortOption = option
-                        }
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
-                    } label: {
-                        Text(option.rawValue)
-                            .font(.system(size: 13, weight: sortOption == option ? .semibold : .regular))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(
-                                Capsule()
-                                    .fill(sortOption == option
-                                          ? Color.purple
-                                          : Color.white.opacity(0.07))
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(sortOption == option
-                                                    ? Color.purple.opacity(0.5)
-                                                    : Color.white.opacity(0.06),
-                                                    lineWidth: 1)
-                                    )
-                            )
-                            .foregroundColor(sortOption == option ? .white : .white.opacity(0.55))
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.14))
+        .cornerRadius(12)
+        .padding(.horizontal, 18)
         .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
     }
 
-    // MARK: - Notes List
+    // MARK: - Notes Section
 
-    var notesList: some View {
-
+    var notesSection: some View {
         List {
+            if !pinnedList.isEmpty {
+                HStack {
+                    Image(systemName: "pin.fill")
+                        .font(.caption)
+                        .foregroundColor(.purple)
+                    Text("Pinned")
+                        .font(.headline)
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.black)
+                .padding(.top, 6)
 
-            ForEach(sortedNotes) { note in
+                ForEach(pinnedList) { note in
+                    noteCard(note)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.black)
+                        .padding(.vertical, 8)
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                togglePin(note)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            } label: {
+                                Label("Unpin", systemImage: "pin.slash")
+                            }
+                            .tint(.purple)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { deleteNote(note) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button { share(note) } label: {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                            .tint(Color(UIColor.systemGray3))
+                        }
+                        .onTapGesture {
 
-                modernNoteCard(note)
+                            if note.isLocked {
+                                noteToUnlock = note
+                                showUnlockPrompt = true
+                            } else {
+                                openNote(note)
+                            }
+
+                        }
+                        .onLongPressGesture {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            togglePin(note)
+                        }
+                }
+            }
+
+            if !unpinnedList.isEmpty {
+                if !pinnedList.isEmpty {
+                    HStack {
+                        Text("All Notes")
+                            .font(.headline)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 18)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .padding(.vertical, 5)
-                    .padding(.horizontal, 16)
+                    .listRowBackground(Color.black)
+                    .padding(.top, 6)
+                }
 
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            togglePin(note)
-                            let impact = UIImpactFeedbackGenerator(style: .medium)
-                            impact.impactOccurred()
-                        } label: {
-                            Label("Pin", systemImage: pinnedNotes.contains(note.id) ? "pin.slash" : "pin")
+                ForEach(unpinnedList) { note in
+                    noteCard(note)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.black)
+                        .padding(.vertical, 8)
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                togglePin(note)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            } label: {
+                                Label("Pin", systemImage: "pin")
+                            }
+                            .tint(.purple)
                         }
-                        .tint(.purple)
-                    }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { deleteNote(note) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button { share(note) } label: {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                            .tint(Color(UIColor.systemGray3))
+                        }
+                        .onTapGesture { openNote(note) }
+                        .contextMenu {
 
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            deleteNote(note)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                        Button {
-                            share(note)
-                        } label: {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                        }
-                        .tint(.indigo)
-                    }
+                            
 
-                    .onTapGesture {
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
-                        refreshID = UUID()
-                        selectedNote = note
-                    }
+                            Button(role: .destructive) {
+                                deleteNote(note)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+
+                            Divider()
+
+                            Button {
+                                togglePin(note)
+                            } label: {
+                                Label("Pin Note", systemImage: "pin")
+                            }
+
+                            Button {
+                                duplicateNote(note)
+                            } label: {
+                                Label("Duplicate Note", systemImage: "doc.on.doc")
+                            }
+                        }
+                }
             }
 
-            // Bottom padding for FAB
-            Color.clear
-                .frame(height: 90)
+            if sortedNotes.isEmpty {
+                emptyState
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.black)
+            }
+
+            Color.clear.frame(height: 90)
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -339,221 +461,168 @@ struct NotesView: View {
         .scrollContentBackground(.hidden)
     }
 
-    // MARK: - Note Card
+    // MARK: - Note Card (mirrors taskCard exactly, with purple left vertical line)
 
-    private func modernNoteCard(_ note: Note) -> some View {
+    func noteCard(_ note: Note) -> some View {
+        HStack(spacing: 14) {
 
-        HStack(spacing: 0) {
+            // Purple vertical line on left — always shown, aesthetic accent
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.purple)
+                .frame(width: 3, height: 44)
 
-            // Accent bar
-            RoundedRectangle(cornerRadius: 3)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.purple, Color.purple.opacity(0.5)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 4)
-                .padding(.vertical, 12)
-                .padding(.leading, 14)
+            VStack(alignment: .leading, spacing: 6) {
 
-            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    noteBadge(note)
 
-                // Title row
-                HStack(spacing: 6) {
-
-                    if pinnedNotes.contains(note.id) {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.purple)
+                    HStack(spacing: 6) {
+                        
+                        
+                        Text(note.title.isEmpty ? "Untitled" : note.title)
+                        
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .lineLimit(1)
                     }
-
-                    Text(note.title.isEmpty ? "Untitled Note" : note.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
 
                     Spacer()
 
-                    // Image thumbnail preview
-                    if let firstImage = note.images.first {
-                        Image(uiImage: firstImage.image)
+                    if let first = note.images.first {
+                        Image(uiImage: first.image)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 36, height: 36)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                            )
+                            .frame(width: 34, height: 34)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
 
-                // Content preview
                 if !note.content.isEmpty {
                     Text(note.content)
-                        .font(.system(size: 13))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                         .lineLimit(2)
-                        .foregroundColor(.white.opacity(0.45))
                 }
 
-                // Footer row
-                HStack(spacing: 8) {
-
-                    // Date
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 9))
-                        Text(note.createdAt.formatted(date: .abbreviated, time: .omitted))
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundColor(.green.opacity(0.8))
-
-                    // Word count
-                    let wordCount = note.content.split(separator: " ").count
-                    if wordCount > 0 {
-                        Text("·")
-                            .foregroundColor(.white.opacity(0.2))
-                        HStack(spacing: 3) {
-                            Image(systemName: "text.word.spacing")
-                                .font(.system(size: 9))
-                            Text("\(wordCount)w")
-                                .font(.system(size: 11))
-                        }
-                        .foregroundColor(.white.opacity(0.3))
-                    }
-
-                    Spacer()
-
-                    // Image count badge
-                    if note.images.count > 1 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "photo.stack")
-                                .font(.system(size: 9))
-                            Text("\(note.images.count)")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(.purple.opacity(0.8))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule().fill(Color.purple.opacity(0.12))
-                        )
-                    }
-
-                    // Reminder badge
-                    if let reminder = note.reminder {
-                        HStack(spacing: 3) {
-                            Image(systemName: "alarm")
-                                .font(.system(size: 9))
-                            Text(reminder.formatted(date: .omitted, time: .shortened))
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(.orange.opacity(0.9))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.orange.opacity(0.12)))
-                    }
-                }
+                Text(note.createdAt, style: .date)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
+
+            Spacer()
         }
+        .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.14, green: 0.13, blue: 0.18),
-                            Color(red: 0.12, green: 0.11, blue: 0.16)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: Color.black.opacity(0.35), radius: 10, x: 0, y: 4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                )
+                .fill(Color(red: 0.12, green: 0.12, blue: 0.14))
+                .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 3)
         )
+        .padding(.horizontal, 16)
     }
 
-    // MARK: - Floating Action Button
+    func noteBadge(_ note: Note) -> some View {
+        let label: String = {
+            if pinnedNotes.contains(note.id) { return "Pinned" }
+            if note.reminder != nil           { return "Reminder" }
+            return "Note"
+        }()
 
-    var floatingButton: some View {
+        return Text(label)
+            .font(.caption2)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.purple.opacity(0.2))
+            .foregroundColor(.purple)
+            .cornerRadius(6)
+    }
 
-        VStack {
+    // MARK: - Empty State
+
+    var emptyState: some View {
+        VStack(spacing: 14) {
+            Spacer().frame(height: 60)
+            Image(systemName: "note.text")
+                .font(.system(size: 38, weight: .light))
+                .foregroundColor(.secondary)
+            Text("No Notes Yet")
+                .font(.headline)
+                .foregroundColor(.secondary)
+            Text("Tap + to write your first note")
+                .font(.caption)
+                .foregroundColor(Color(UIColor.systemGray3))
             Spacer()
-            HStack {
-                Spacer()
-
-                Button {
-                    let impact = UIImpactFeedbackGenerator(style: .medium)
-                    impact.impactOccurred()
-
-                    let newNote = Note(title: "", content: "")
-                    viewModel.notes.append(newNote)
-                    selectedNote = newNote
-                } label: {
-
-                    ZStack {
-                        // Glow effect
-                        Circle()
-                            .fill(Color.purple.opacity(0.35))
-                            .frame(width: 64, height: 64)
-                            .blur(radius: 12)
-
-                        // Glass button
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.purple,
-                                        Color(red: 0.5, green: 0.2, blue: 0.9)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 56, height: 56)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                            )
-                            .shadow(color: Color.purple.opacity(0.5), radius: 14, x: 0, y: 6)
-
-                        Image(systemName: "plus")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                }
-                .padding(.bottom, 28)
-                .padding(.trailing, 20)
-            }
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Actions
 
+    private func openNote(_ note: Note) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        refreshID = UUID()
+        selectedNote = note
+    }
+
     func togglePin(_ note: Note) {
-        if pinnedNotes.contains(note.id) {
-            pinnedNotes.remove(note.id)
-        } else {
-            pinnedNotes.insert(note.id)
-        }
+        if pinnedNotes.contains(note.id) { pinnedNotes.remove(note.id) }
+        else { pinnedNotes.insert(note.id) }
     }
 
     func deleteNote(_ note: Note) {
-        if let index = viewModel.notes.firstIndex(where: { $0.id == note.id }) {
-            viewModel.notes.remove(at: index)
-        }
+        viewModel.notes.removeAll { $0.id == note.id }
     }
 
     func share(_ note: Note) {
-        let text = "\(note.title)\n\n\(note.content)"
-        let activity = UIActivityViewController(activityItems: [text], applicationActivities: nil)
-        UIApplication.shared.windows.first?.rootViewController?.present(activity, animated: true)
+        let vc = UIActivityViewController(
+            activityItems: ["\(note.title)\n\n\(note.content)"],
+            applicationActivities: nil
+        )
+        UIApplication.shared.windows.first?.rootViewController?.present(vc, animated: true)
+    }
+    
+    func duplicateNote(_ note: Note) {
+
+        var newNote = Note(
+            id: UUID(),
+            title: note.title,
+            content: note.content,
+            images: note.images,
+            createdAt: Date(),
+            colorHex: note.colorHex,
+            reminder: note.reminder
+        )
+        newNote.isLocked = note.isLocked
+
+        viewModel.notes.insert(newNote, at: 0)
+    }
+    
+
+    // MARK: - Notifications
+
+    private func checkNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                notificationsEnabled = settings.authorizationStatus == .authorized
+            }
+        }
+    }
+
+    private func requestOrToggleNotifications() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                if settings.authorizationStatus == .notDetermined {
+                    showNotificationAlert = true
+                } else if settings.authorizationStatus == .authorized {
+                    // Already enabled — show a summary alert of upcoming reminders
+                    notificationsEnabled = true
+                    showNotificationAlert = true
+                } else {
+                    // Denied — direct to Settings
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+        }
     }
 }

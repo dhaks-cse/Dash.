@@ -9,7 +9,7 @@ import SwiftUI
 
 extension Color {
 
-    init?(hex: String) {
+    init(hex: String) {
 
         var hex = hex
 
@@ -17,7 +17,10 @@ extension Color {
             hex.removeFirst()
         }
 
-        guard let int = UInt64(hex, radix: 16) else { return nil }
+        guard let int = UInt64(hex, radix: 16) else {
+            self = .clear
+            return
+        }
 
         let r = Double((int >> 16) & 0xFF) / 255
         let g = Double((int >> 8) & 0xFF) / 255
