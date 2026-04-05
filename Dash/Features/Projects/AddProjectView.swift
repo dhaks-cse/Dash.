@@ -22,30 +22,30 @@ struct AddProjectView: View {
     @State private var selectedLanguages = [String]()
     @State private var showAlert = false
     @State private var totalAmountText = ""
-    @State private var currentSection = 0
 
     let projectTypes = [
-        "Android App", "iOS App", "Cross Platform App", "Website",
-        "Android App and Website", "iOS App and Website",
-        "Cross Platform App and Website", "IOT", "Others"
+        "Android App","iOS App","Cross Platform App","Website",
+        "Android App and Website","iOS App and Website",
+        "Cross Platform App and Website","IOT","Others"
     ]
 
     let languages = [
-        "Java", "Kotlin", "C++", "Dart", "Rust", "Swift", "Objective-C", "SwiftUI",
-        "React Native", "Flutter", "Xamarin", "Elixir", "PureScript", "HTML", "CSS",
-        "Tailwind CSS", "JavaScript", "PHP", "Ruby", "Python", "TypeScript", "Go",
-        "F#", "Clojure", "MySQL", "PostgreSQL", "Node.js", "ASP.NET", "Express.js",
-        "Laravel", "Django", "Flask", "Spring", "Ruby on Rails"
+        "Java","Kotlin","C++","Dart","Rust","Swift","Objective-C","SwiftUI",
+        "React Native","Flutter","Xamarin","HTML","CSS","JavaScript",
+        "Python","TypeScript","Go","MySQL","PostgreSQL","Node.js"
     ]
 
     let paymentMethods = [
-        "Credit Card", "Debit Card", "PayPal", "Bank Transfer", "UPI", "Other"
+        "Credit Card","Debit Card","PayPal","Bank Transfer","UPI","Other"
     ]
 
     var isValid: Bool {
-        !project.name.isEmpty && !project.developer.isEmpty &&
-        !project.customer.isEmpty && !selectedLanguages.isEmpty &&
-        !project.projectType.isEmpty && !project.paymentMethod.isEmpty &&
+        !project.name.isEmpty &&
+        !project.developer.isEmpty &&
+        !project.customer.isEmpty &&
+        !selectedLanguages.isEmpty &&
+        !project.projectType.isEmpty &&
+        !project.paymentMethod.isEmpty &&
         project.totalAmount > 0
     }
 
@@ -53,420 +53,317 @@ struct AddProjectView: View {
 
         ZStack {
 
-            LinearGradient(
-                colors: [
-                    Color(red: 0.06, green: 0.06, blue: 0.09),
-                    Color(red: 0.09, green: 0.08, blue: 0.13)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
 
-                sheetHeader
+                header
 
                 ScrollView {
+
                     VStack(spacing: 14) {
 
-                        sectionHeader("Project Info", icon: "folder.fill")
-                        darkField("Project Name", text: $project.name, icon: "pencil")
-                        darkField("Developer", text: $project.developer, icon: "hammer")
-                        darkField("Customer", text: $project.customer, icon: "person")
-                        darkField("GitHub Repository", text: $project.githubRepo, icon: "chevron.left.forwardslash.chevron.right")
+                        section("Project Info","folder.fill")
+
+                        textField("Project Name", $project.name,"pencil")
+                        textField("Developer",$project.developer,"hammer")
+                        textField("Customer",$project.customer,"person")
+                        textField("GitHub Repository",$project.githubRepo,"chevron.left.forwardslash.chevron.right")
 
                         divider
 
-                        sectionHeader("Timeline", icon: "calendar")
-                        dateField("Start Date", selection: $project.startDate)
-                        dateField("Expected End Date", selection: $project.endDate)
+                        section("Timeline","calendar")
+
+                        dateField("Start Date",$project.startDate)
+                        dateField("Expected End Date",$project.endDate)
 
                         divider
 
-                        sectionHeader("Tech Stack", icon: "cpu")
-                        pickerField("Project Type", selection: $project.projectType, options: projectTypes, icon: "iphone")
+                        section("Tech Stack","cpu")
+
+                        picker("Project Type",$project.projectType,projectTypes,"iphone")
+
                         languageField
 
                         divider
 
-                        sectionHeader("Payment", icon: "banknote")
-                        pickerField("Payment Method", selection: $project.paymentMethod, options: paymentMethods, icon: "creditcard")
+                        section("Payment","banknote")
+
+                        picker("Payment Method",$project.paymentMethod,paymentMethods,"creditcard")
+
                         amountField
 
                         divider
 
-                        sectionHeader("Progress", icon: "chart.bar.fill")
+                        section("Progress","chart.bar.fill")
+
                         progressField
 
                         Color.clear.frame(height: 20)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    .padding(.horizontal,18)
+                    .padding(.top,8)
                 }
 
-                bottomBar
+                bottomButton
             }
         }
-
-        .alert("Incomplete Fields", isPresented: $showAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
+        .alert("Incomplete Fields",isPresented:$showAlert){
+            Button("OK",role:.cancel){}
+        } message:{
             Text("Please fill in all required fields.")
         }
     }
 
-    // MARK: - Sheet Header
+    // MARK: Header
 
-    var sheetHeader: some View {
+    var header: some View {
 
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(Rectangle().fill(Color.purple.opacity(0.06)))
+        HStack {
 
-            VStack(spacing: 0) {
-                Capsule()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 40, height: 4)
-                    .padding(.top, 10)
-                    .padding(.bottom, 12)
-
-                HStack {
-                    Button {
-                        presentationMode.wrappedValue.dismiss()
-                    } label: {
-                        Text("Cancel")
-                            .font(.system(size: 15))
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-
-                    Spacer()
-
-                    Text("New Project")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-
-                    Spacer()
-
-                    // Invisible balance
-                    Text("Cancel")
-                        .font(.system(size: 15))
-                        .foregroundColor(.clear)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 14)
+            Button{
+                presentationMode.wrappedValue.dismiss()
+            }label:{
+                Text("Cancel")
+                    .foregroundColor(.white.opacity(0.6))
             }
+
+            Spacer()
+
+            Text("New Project")
+                .font(.headline)
+                .foregroundColor(.white)
+
+            Spacer()
+
+            Text("Cancel")
+                .opacity(0)
         }
-        .frame(height: 74)
+        .padding(.horizontal,18)
+        .padding(.vertical,12)
+        .background(Color.black)
     }
 
-    // MARK: - Section Header
+    // MARK: Section
 
-    func sectionHeader(_ title: String, icon: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.purple.opacity(0.8))
+    func section(_ title:String,_ icon:String)->some View{
+        HStack{
+            Image(systemName:icon)
+                .foregroundColor(.purple)
+
             Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.35))
+                .font(.caption.weight(.bold))
+                .foregroundColor(.secondary)
+
             Spacer()
         }
-        .padding(.top, 6)
-        .padding(.bottom, 2)
     }
 
-    // MARK: - Dark Text Field
+    // MARK: TextField
 
-    func darkField(_ placeholder: String, text: Binding<String>, icon: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.purple.opacity(0.6))
-                .frame(width: 20)
+    func textField(_ placeholder:String,_ text:Binding<String>,_ icon:String)->some View{
 
-            TextField(placeholder, text: text)
-                .font(.system(size: 15))
+        HStack{
+
+            Image(systemName:icon)
+                .foregroundColor(.purple)
+
+            TextField(placeholder,text:text)
                 .foregroundColor(.white)
-                .tint(.purple)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                )
-        )
+        .padding(14)
+        .background(card)
     }
 
-    // MARK: - Date Field
+    // MARK: DateField
 
-    func dateField(_ label: String, selection: Binding<Date>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "calendar")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.purple.opacity(0.6))
-                .frame(width: 20)
+    func dateField(_ label:String,_ binding:Binding<Date>)->some View{
 
-            DatePicker(label, selection: selection, displayedComponents: .date)
-                .font(.system(size: 15))
-                .foregroundColor(.white)
-                .tint(.purple)
+        HStack{
+
+            Image(systemName:"calendar")
+                .foregroundColor(.purple)
+
+            DatePicker(label,selection:binding,displayedComponents:.date)
                 .colorScheme(.dark)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                )
-        )
+        .padding(14)
+        .background(card)
     }
 
-    // MARK: - Picker Field
+    // MARK: Picker
 
-    func pickerField(_ label: String, selection: Binding<String>, options: [String], icon: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.purple.opacity(0.6))
-                .frame(width: 20)
+    func picker(_ label:String,_ selection:Binding<String>,_ options:[String],_ icon:String)->some View{
 
-            Picker(label, selection: selection) {
-                Text("Select...").tag("")
-                ForEach(options, id: \.self) { Text($0).tag($0) }
+        HStack{
+
+            Image(systemName:icon)
+                .foregroundColor(.purple)
+                .frame(width:20)
+
+            Picker(label,selection:selection){
+                Text("Select").tag("")
+                ForEach(options,id:\.self){
+                    Text($0).tag($0)
+                }
             }
-            .tint(.purple)
             .colorScheme(.dark)
+            .tint(.purple)
+            .frame(maxWidth:220, alignment:.leading)
+
+            Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                )
-        )
+        .padding(14)
+        .background(card)
     }
+    // MARK: Languages
 
-    // MARK: - Language Multi-Picker
+    var languageField: some View{
 
-    var languageField: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Image(systemName: "terminal")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.purple.opacity(0.6))
-                    .frame(width: 20)
+        VStack(alignment:.leading,spacing:10){
 
-                MultiSelectPicker(
-                    selections: $selectedLanguages,
-                    options: languages,
-                    title: "Languages Used"
-                )
-                .colorScheme(.dark)
-                .tint(.purple)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                    )
+            MultiSelectPicker(
+                selections:$selectedLanguages,
+                options:languages,
+                title:"Languages Used"
             )
 
-            // Selected chips
-            if !selectedLanguages.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(selectedLanguages, id: \.self) { lang in
-                            HStack(spacing: 4) {
-                                Text(lang)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.purple)
-                                Button {
-                                    selectedLanguages.removeAll { $0 == lang }
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 8, weight: .bold))
-                                        .foregroundColor(.purple.opacity(0.6))
-                                }
-                            }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.purple.opacity(0.1)))
-                            .overlay(Capsule().stroke(Color.purple.opacity(0.2), lineWidth: 1))
+            if !selectedLanguages.isEmpty{
+
+                ScrollView(.horizontal,showsIndicators:false){
+
+                    HStack{
+
+                        ForEach(selectedLanguages,id:\.self){lang in
+
+                            Text(lang)
+                                .font(.caption)
+                                .foregroundColor(.purple)
+                                .padding(.horizontal,10)
+                                .padding(.vertical,5)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.purple.opacity(0.15))
+                                )
                         }
                     }
-                    .padding(.horizontal, 4)
                 }
             }
         }
     }
 
-    // MARK: - Amount Field
+    // MARK: Amount
 
-    var amountField: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "dollarsign.circle")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.purple.opacity(0.6))
-                .frame(width: 20)
+    var amountField: some View{
 
-            TextField("Total Amount", text: $totalAmountText)
-                .font(.system(size: 15))
-                .foregroundColor(.white)
-                .tint(.purple)
+        HStack{
+
+            Image(systemName:"banknote")
+                .foregroundColor(.purple)
+
+            TextField("Total Amount",text:$totalAmountText)
                 .keyboardType(.decimalPad)
-                .onChange(of: totalAmountText) { val in
-                    if let v = Double(val) { project.totalAmount = v }
+                .foregroundColor(.white)
+                .onChange(of:totalAmountText){v in
+                    if let n = Double(v){
+                        project.totalAmount = n
+                    }
                 }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                )
-        )
+        .padding(14)
+        .background(card)
     }
 
-    // MARK: - Progress Field
+    // MARK: Progress
 
-    var progressField: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+    var progressField: some View{
+
+        VStack(spacing:10){
+
+            HStack{
                 Text("Initial Progress")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.secondary)
+
                 Spacer()
-                Text("\(Int(project.progress * 100))%")
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+
+                Text("\(Int(project.progress*100))%")
                     .foregroundColor(.purple)
             }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.white.opacity(0.07))
-                        .frame(height: 8)
+            GeometryReader{geo in
 
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.purple, Color.purple.opacity(0.6)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geo.size.width * CGFloat(project.progress), height: 8)
+                ZStack(alignment:.leading){
+
+                    RoundedRectangle(cornerRadius:3)
+                        .fill(Color(red:0.18,green:0.18,blue:0.20))
+                        .frame(height:5)
+
+                    RoundedRectangle(cornerRadius:3)
+                        .fill(Color.purple)
+                        .frame(width:geo.size.width * CGFloat(project.progress),height:5)
                 }
             }
-            .frame(height: 8)
+            .frame(height:5)
 
-            Slider(value: $project.progress, in: 0...1, step: 0.01)
+            Slider(value:$project.progress,in:0...1)
                 .tint(.purple)
-                .colorScheme(.dark)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                )
-        )
+        .padding(14)
+        .background(card)
     }
 
-    // MARK: - Divider
+    // MARK: Divider
 
-    var divider: some View {
+    var divider: some View{
         Rectangle()
             .fill(Color.white.opacity(0.05))
-            .frame(height: 1)
-            .padding(.vertical, 4)
+            .frame(height:1)
     }
 
-    // MARK: - Bottom Bar
+    // MARK: Bottom Button
 
-    var bottomBar: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(Rectangle().fill(Color.purple.opacity(0.04)))
-                .ignoresSafeArea(edges: .bottom)
+    var bottomButton: some View{
 
-            Button {
-                if isValid {
-                    project.languagesUsed = selectedLanguages.joined(separator: ", ")
-                    if let index = projects.firstIndex(where: { $0.id == project.id }) {
-                        projects[index] = project
-                    } else {
-                        projects.append(project)
-                    }
-                    if let data = try? JSONEncoder().encode(projects) {
-                        UserDefaults.standard.set(data, forKey: "projects")
-                    }
-                    let impact = UINotificationFeedbackGenerator()
-                    impact.notificationOccurred(.success)
-                    presentationMode.wrappedValue.dismiss()
-                } else {
-                    showAlert = true
-                    let impact = UINotificationFeedbackGenerator()
-                    impact.notificationOccurred(.error)
+        Button{
+
+            if isValid{
+
+                project.languagesUsed = selectedLanguages.joined(separator:",")
+
+                projects.append(project)
+
+                if let data = try? JSONEncoder().encode(projects){
+                    UserDefaults.standard.set(data,forKey:"projects")
                 }
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
-                    Text("Create Project")
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            isValid
-                            ? LinearGradient(
-                                colors: [Color.purple, Color(red: 0.5, green: 0.2, blue: 0.9)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            : LinearGradient(
-                                colors: [Color.white.opacity(0.08), Color.white.opacity(0.06)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .shadow(color: isValid ? Color.purple.opacity(0.35) : .clear, radius: 10, x: 0, y: 4)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(isValid ? Color.purple.opacity(0.3) : Color.white.opacity(0.06), lineWidth: 1)
-                )
+
+                presentationMode.wrappedValue.dismiss()
+
+            }else{
+                showAlert = true
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 10)
+
+        }label:{
+
+            Text("Create Project")
+                .font(.headline)
+                .foregroundColor(.white)
+                .frame(maxWidth:.infinity)
+                .padding(.vertical,16)
+                .background(
+                    RoundedRectangle(cornerRadius:16)
+                        .fill(Color.purple)
+                )
         }
-        .frame(height: 74)
+        .padding(20)
+    }
+
+    var card: some View{
+
+        RoundedRectangle(cornerRadius:18)
+            .fill(Color(red:0.12,green:0.12,blue:0.14))
+            .overlay(
+                RoundedRectangle(cornerRadius:18)
+                    .stroke(Color.white.opacity(0.12),lineWidth:0.5)
+            )
     }
 }

@@ -119,7 +119,7 @@ struct ProjectDetailView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .sheet(isPresented: $showingEditProject) {
-            EditProjectView(project: $project, lastEditedDate: $lastEditedDate)
+            EditProjectView(project: $project, projects: $projects)
         }
         .onAppear {
             isPaymentDone = project.isPaymentDone

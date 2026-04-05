@@ -266,9 +266,9 @@ struct NotesView: View {
             HStack(spacing: 10) {
                 ForEach(SortOption.allCases) { opt in
                     Text(opt.rawValue)
-                        .font(.caption)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
+                        .font(.subheadline)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
                         .background(
                             Capsule().fill(
                                 sortOption == opt
