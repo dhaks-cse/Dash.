@@ -223,31 +223,27 @@ struct ProjectView: View {
                     }
                 }
 
-                NavigationLink(
-                    destination: selectedProject.map { proj in
-                        ProjectDetailView(
-                            project: Binding(
-                                get: { projects.first { $0.id == proj.id } ?? proj },
-                                set: { nv in
-                                    if let i = projects.firstIndex(where: { $0.id == proj.id }) {
-                                        projects[i] = nv
-                                        saveProjects()
-                                    }
-                                }
-                            ),
-                            projects: $projects
-                        )
-                    },
-                    isActive: Binding(
-                        get: { selectedProject != nil },
-                        set: { if !$0 { selectedProject = nil } }
-                    )
-                ) { EmptyView() }
             }
             .navigationTitle("Projects")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingAddProject) {
                 AddProjectView(projects: $projects)
+                    .sheet(item: $selectedProject) { proj in
+                        NavigationView {
+                            ProjectDetailView(
+                                project: Binding(
+                                    get: { projects.first { $0.id == proj.id } ?? proj },
+                                    set: { nv in
+                                        if let i = projects.firstIndex(where: { $0.id == proj.id }) {
+                                            projects[i] = nv
+                                            saveProjects()
+                                        }
+                                    }
+                                ),
+                                projects: $projects
+                            )
+                        }
+                    }
             }
             .onAppear { loadProjects() }
             .toolbar {
