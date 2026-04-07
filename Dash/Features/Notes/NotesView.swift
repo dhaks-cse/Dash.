@@ -115,6 +115,21 @@ struct NotesView: View {
             }
             .navigationTitle("Notes")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $selectedNote) { note in
+                NavigationView {
+                    EditNoteView(
+                        note: Binding(
+                            get: { viewModel.notes.first { $0.id == note.id } ?? note },
+                            set: { newValue in
+                                if let index = viewModel.notes.firstIndex(where: { $0.id == newValue.id }) {
+                                    viewModel.notes[index] = newValue
+                                }
+                            }
+                        ),
+                        viewModel: viewModel
+                    )
+                }
+            }
             .onAppear {
                 refreshID = UUID()
                 checkNotificationStatus()
@@ -169,7 +184,7 @@ struct NotesView: View {
             message: {
                 Text("Allow Dash to send you reminder notifications for your notes.")
             }
-            .background(editNoteNavigationLink)
+            
             .fullScreenCover(isPresented: $showNoteUnlock) {
 
                 PINLockView(onUnlock: {

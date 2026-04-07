@@ -343,17 +343,11 @@ struct DailyPlannerView: View {
                 AddTaskView(viewModel: viewModel)
             }
 
-            .background(
-                NavigationLink(
-                    destination: selectedTask.map {
-                        EditTaskView(task: $0, viewModel: viewModel)
-                    },
-                    isActive: Binding(
-                        get: { selectedTask != nil },
-                        set: { if !$0 { selectedTask = nil } }
-                    )
-                ) { EmptyView() }
-            )
+            .sheet(item: $selectedTask) { task in
+                NavigationView {
+                    EditTaskView(task: task, viewModel: viewModel)
+                }
+            }
 
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
