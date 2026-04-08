@@ -9,6 +9,7 @@ struct ProjectView: View {
     @State private var showingAddProject = false
     @State private var selectedProject: Project? = nil
     @State private var searchText = ""
+    @State private var refreshID = UUID()
 
     enum SortOption: String, CaseIterable, Identifiable {
         case startDateDescending = "Newest"
@@ -182,6 +183,9 @@ struct ProjectView: View {
                                     .padding(.vertical, 8)
                                     .onTapGesture {
                                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+                                        refreshID = UUID()   // reset swipe state
+
                                         selectedProject = project
                                     }
                                     .swipeActions(edge: .trailing) {
@@ -196,6 +200,7 @@ struct ProjectView: View {
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                         }
+                        .id(refreshID)   // ⭐ add this line
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
                         .background(Color.black)
@@ -245,7 +250,10 @@ struct ProjectView: View {
                         }
                     }
             }
-            .onAppear { loadProjects() }
+            .onAppear {
+                loadProjects()
+                refreshID = UUID()
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     AppMenuButton()
