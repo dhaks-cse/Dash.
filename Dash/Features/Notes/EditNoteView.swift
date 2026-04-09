@@ -336,8 +336,14 @@ struct EditNoteView: View {
             ImageViewer(image: img.image)
         }
         .onDisappear {
-            syncBulletsToContent()
-            autoSave()
+            let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if title.isEmpty && content.isEmpty {
+                viewModel.notes.removeAll { $0.id == note.id }
+            } else {
+                autoSave()
+            }
         }
     }
 
@@ -437,5 +443,13 @@ struct EditNoteView: View {
         .buttonStyle(.plain)
     }
 
-    func autoSave() { viewModel.addOrUpdate(note: note) }
+    func autoSave() {
+
+        let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !title.isEmpty || !content.isEmpty {
+            viewModel.addOrUpdate(note: note)
+        }
+    }
 }

@@ -21,6 +21,8 @@ struct NotesView: View {
     @State private var showNoteUnlock = false
     @State private var noteToUnlock: Note?
     @State private var enteredPassword = ""
+    @State private var newNote = Note(title: "", content: "")
+    @State private var showingAddNote = false
  
     enum SortOption: String, CaseIterable, Identifiable {
         case createdDescending = "Newest"
@@ -95,12 +97,16 @@ struct NotesView: View {
                     Spacer()
                     HStack {
                         Spacer()
+                             .shadow(radius: 8)
                         Button {
+
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            let n = Note(title: "", content: "")
-                            viewModel.notes.append(n)
-                            selectedNote = n
+
+                            newNote = Note(title: "", content: "")
+                            showingAddNote = true
+
                         } label: {
+
                             Image(systemName: "plus")
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundColor(.white)
@@ -126,6 +132,14 @@ struct NotesView: View {
                                 }
                             }
                         ),
+                        viewModel: viewModel
+                    )
+                }
+            }
+            .sheet(isPresented: $showingAddNote) {
+                NavigationView {
+                    EditNoteView(
+                        note: $newNote,
                         viewModel: viewModel
                     )
                 }
@@ -253,9 +267,7 @@ struct NotesView: View {
                 // Quick-compose shortcut
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    let n = Note(title: "", content: "• ")
-                    viewModel.notes.append(n)
-                    selectedNote = n
+                    selectedNote = Note(title: "", content: "")
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "list.bullet")
