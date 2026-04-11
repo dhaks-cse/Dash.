@@ -46,18 +46,7 @@ struct EditTaskView: View {
                 .onChange(of: taskCopy.dueDate) { _ in autoSave() }
             }
 
-            Section(header: Text("Priority")) {
-
-                Picker("Priority", selection: $taskCopy.priority) {
-
-                    ForEach(TaskPriority.allCases) { priority in
-                        Text(priority.rawValue.capitalized)
-                    }
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .onChange(of: taskCopy.priority) { _ in autoSave() }
-            }
-
+            
             Section {
 
                 Toggle("Completed", isOn: $taskCopy.isCompleted)
