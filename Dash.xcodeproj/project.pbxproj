@@ -23,6 +23,19 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		928FA7EE2F893BF20094672F /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		DBEDBCEF2CEC52C700E081B4 /* Dash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dash.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBEDBCFF2CEC52C800E081B4 /* DashTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -40,6 +53,21 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		928FA7E42F893BF10094672F /* DashWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "DashWatch Watch App";
+			sourceTree = "<group>";
+		};
+		928FA7FD2F893E680094672F /* DashWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "DashWatch Watch App";
+			sourceTree = "<group>";
+		};
+		928FA8112F8941940094672F /* DashWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "DashWatch Watch App";
+			sourceTree = "<group>";
+		};
 		DBEDBCF12CEC52C700E081B4 /* Dash */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -91,6 +119,9 @@
 				DBEDBCF12CEC52C700E081B4 /* Dash */,
 				DBEDBD022CEC52C800E081B4 /* DashTests */,
 				DBEDBD0C2CEC52C800E081B4 /* DashUITests */,
+				928FA7E42F893BF10094672F /* DashWatch Watch App */,
+				928FA7FD2F893E680094672F /* DashWatch Watch App */,
+				928FA8112F8941940094672F /* DashWatch Watch App */,
 				DBEDBCF02CEC52C700E081B4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -115,6 +146,7 @@
 				DBEDBCEB2CEC52C600E081B4 /* Sources */,
 				DBEDBCEC2CEC52C600E081B4 /* Frameworks */,
 				DBEDBCED2CEC52C600E081B4 /* Resources */,
+				928FA7EE2F893BF20094672F /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
@@ -183,7 +215,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1620;
+				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
 					DBEDBCEE2CEC52C600E081B4 = {
